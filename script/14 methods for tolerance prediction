@@ -1,0 +1,600 @@
+library(MASS)
+library(reshape2)
+library(ggplot2)
+library(InformationValue)
+library(leaps)
+library(car)
+library(pROC)
+library(bestglm)
+library(earth)
+library(ElemStatLearn) 
+library(corrplot) 
+library(glmnet) 
+library(caret) 
+library(pROC)
+library(ROCR)
+library(InformationValue)
+library(class)
+library(kknn)
+library(e1071)
+library(kernlab)
+library(rpart) 
+library(partykit) 
+library(ElemStatLearn) 
+library(randomForest) 
+library(xgboost) 
+library(gplots)
+library(psych)
+library(scatterplot3d) 
+library(Biobase)
+library(GEOquery)
+library(survival)
+library(RegParallel)
+library(survminer) 
+
+
+mydata <- read.table("mydata.txt", header =T, sep="\t")
+mydata$ID = NULL
+
+y <- ifelse(mydata$class == "class style", 1, 0)
+
+set.seed(123) 
+ind <- sample(2, nrow(mydata), replace = TRUE, prob = c(0.6, 0.4))
+train <- mydata[ind==1, ] 
+test <- mydata[ind==2, ] 
+
+trainY <- y[ind==1]
+testY <- y[ind==2]
+
+fit <- lm(y ~ co-DEG list, data = mydata)
+summary(fit)
+
+sub.fit <- regsubsets(y ~ co-DEG list, data = mydata,really.big=T)
+best.summary <- summary(sub.fit)
+names(best.summary)
+which.min(best.summary$rss)
+which.max(best.summary$adjr2)
+plot(sub.fit, scale = "Cp")
+
+best.fit <- lm(y ~ "selct gene list",  data =mydata)
+vif(best.fit)
+
+full.fit <- glm(class ~ "selected gene list", 
+                family = binomial, data = mydata)
+vif(full.fit) #delete the gene with high vif(>10)
+
+full.fit <- glm(class ~ "selected gene list", 
+                family = binomial, data = train)
+vif(full.fit)#delete the gene with high vif(>10)
+vif(full.fit)
+train.probs <- predict(full.fit, type = "response")
+train.probs[1:5] 
+confusionMatrix(trainY, train.probs) 
+
+misClassError(trainY, train.probs) 
+test.probs <- predict(full.fit, newdata = test, type = "response")
+misClassError(testY, test.probs)
+confusionMatrix(testY, test.probs) 
+
+glm.roc<- plot.roc(testY, test.probs, main="", percent=TRUE,
+                   ci=TRUE, thresholds="best", 
+                   ci.type="shape",
+                   print.thres=TRUE,
+                   print.auc=TRUE,
+                   auc.polygon=TRUE, 
+                   max.auc.polygon=T) 
+
+mydata.features <- train[, c("selected co-gene list")]
+Xy <- data.frame(cbind(mydata.features, trainY))
+bestglm(Xy = Xy, IC="CV", CVArgs=list(Method="HTF", K=5, REP=1), family=binomial)
+reduce.fit <- glm(class ~ "selected genes", family = binomial, data = train)
+test.cv.probs <- predict(reduce.fit, newdata = test, type = "response")
+misClassError(testY, test.cv.probs)
+confusionMatrix(testY, test.cv.probs)
+bestglm(Xy = Xy, IC = "BIC", family = binomial)
+
+
+lda.fit <- lda(class ~ "selected co-gene list", data = train)
+lda.fit
+plot(lda.fit, type = "both")
+
+train.lda.probs <- predict(lda.fit)$posterior[, 2]
+misClassError(trainY, train.lda.probs)
+confusionMatrix(trainY, train.lda.probs)
+
+test.lda.probs <- predict(lda.fit, newdata =test)$posterior[, 2]
+misClassError(testY, test.lda.probs) 
+confusionMatrix(testY, test.lda.probs)
+
+
+resid.lda <- testY - test.lda.probs
+mean(resid.lda^2)
+lda.roc<- plot.roc(testY, test.lda.probs, percent=TRUE,
+                   ci=TRUE, thresholds="best",
+                   ci.type="shape", 
+                   print.thres=TRUE,
+                   print.auc=TRUE)
+
+
+qda.fit = qda(class ~ "selected co-gene list", data = train)
+qda.fit
+train.qda.probs <- predict(qda.fit)$posterior[, 2]
+misClassError(trainY, train.qda.probs) 
+confusionMatrix(trainY, train.qda.probs)
+
+test.qda.probs <- predict(qda.fit, newdata =test)$posterior[, 2]
+misClassError(testY, test.qda.probs)
+confusionMatrix(testY, test.qda.probs)
+resid.qda <- testY - test.qda.probs
+mean(resid.qda^2) 
+qda.roc<- plot.roc(testY, test.qda.probs, percent=TRUE,
+                   ci=TRUE, thresholds="best",  
+                   ci.type="shape",
+                   print.thres=TRUE,
+                   print.auc=TRUE)
+
+
+
+
+set.seed(1)
+earth.fit <- earth(class ~ "selected co-gene list", data = train,pmethod = "cv",
+                   nfold = 5,ncross = 3,degree = 1,minspan = -1,
+                   glm=list(family=binomial))
+
+summary(earth.fit)
+plotmo(earth.fit)
+plotd(earth.fit)
+evimp(earth.fit)
+test.earth.probs <- predict(earth.fit, newdata = test, type = "response")
+misClassError(testY, test.earth.probs)
+confusionMatrix(testY, test.earth.probs)
+
+resid.earth <- testY - test.earth.probs
+mean(resid.earth^2) 
+earth.roc<- plot.roc(test$class, test.earth.probs, percent=TRUE,
+                     ci=TRUE, thresholds="best", #add= T,
+                     ci.type="shape",
+                     print.thres=TRUE,
+                     print.auc=TRUE)  
+
+subfit <- regsubsets(class ~"selected gene list", 
+                     data = train, really.big=T)
+b.sum <- summary(subfit)
+which.min(b.sum$bic)
+
+plot(b.sum$bic, type = "l", xlab = "", ylab = "BIC", main = "")
+plot(subfit, scale = "bic",ylab = "BIC", main = "")
+
+ols <- lm(trainY ~ "selected gene list", data = train)
+vif(ols)
+
+plot(ols$fitted.values, trainY, xlab = "Predicted", ylab = "Actual", main = "")
+pred.subfit <- predict(ols, newdata = test)
+plot(pred.subfit, testY , xlab = "Predicted", ylab = "Actual", main = "")
+resid.subfit <- testY - pred.subfit
+mean(resid.subfit^2)
+misClassError(testY, pred.subfit)
+Subfit.roc<- plot.roc(testY, pred.subfit, main="", percent=TRUE,
+                      ci=TRUE, thresholds="best", 
+                      ci.type="shape",
+                      print.thres=TRUE,
+                      print.auc=TRUE,
+                      auc.polygon=TRUE, 
+                      max.auc.polygon=T) 
+
+set.seed(317)
+x <- as.matrix(train[, c("selected gene list")])
+y <- trainY
+ridge <- glmnet(x, y, family = "binomial", alpha = 0#Lasso alpha = 1; #ENet alpha = 0.2
+                )
+
+print(ridge)
+
+plot(ridge, xvar = "",xlab="", label = TRUE, main= "")
+ridge.coef <- coef(ridge, s = 0.03)
+ridge.coef
+
+newx <- as.matrix(test[, c("selected gene list")])
+ridge.y <- predict(ridge, newx = newx, type = "response", s = 0.03)
+
+ridge.resid <- ridge.y - testY
+mean(ridge.resid^2) 
+misClassError(testY, ridge.y)  
+plotROC(testY, ridge.y)
+
+ridge.y.roc<- plot.roc(testY, ridge.y, main="", percent=TRUE,
+                       ci=TRUE, thresholds="best",  
+                       ci.type="shape",
+                       print.thres=TRUE,
+                       print.auc=TRUE,
+                       print.auc.col="",
+                       auc.polygon=TRUE, 
+                       max.auc.polygon=T) 
+
+grid <- expand.grid(.alpha = seq(0, 1, by = .2), .lambda =
+                      seq(0.00, 0.1,  by = 0.01))
+table(grid)
+control <- trainControl(method = "LOOCV")
+
+enet.train <- train(class ~ "selected gene list",
+                    data = train, method = "glmnet", 
+                    trControl = control, tuneGrid = grid)
+enet.train
+
+enet <- glmnet(x, y, family = "binomial", alpha = "", lambda = "")
+plot(enet, xvar = "", xlab="", label = TRUE, main= "")
+enet.coef <- coef(enet,alpha = "", lambda = "", exact = TRUE)
+enet.coef
+enet.y <- predict(enet, newx=newx, type="response", alpha = 0.2, lambda = 0.01, exact = TRUE)
+plot(enet.y, testY, xlab="", ylab="", main="")
+enet.resid <- enet.y - testY
+mean(enet.resid^2)
+misClassError(testY, enet.y)
+
+enet.y.roc<- plot.roc(testY, enet.y,  percent=TRUE,add=T,
+                      ci=TRUE, thresholds="best",
+                      ci.type="shape",
+                      print.thres=TRUE,
+                      print.auc=TRUE)
+
+
+set.seed(317)
+ridge.cv = cv.glmnet(x, y, nfolds = 3, 
+                     alpha=0,#(ridge), 
+                     #alpha=1,(Lasso),
+                     #alpha = "0.2",(ENet)
+                     family = "binomial"
+                     #type.measure = "auc"
+)
+ridge.cv
+
+plot(ridge.cv, pch = 0, cex = 1.2,bg="",main="")
+coef(ridge.cv, s = "lambda.1se")
+
+ridge.min.y.cv = predict(ridge.cv, newx=newx, type = "response", s = "lambda.min"#s = "lambda.1se"
+                         )
+ridge.min.y.cv.roc<- plot.roc(testY, ridge.min.y.cv, percent=TRUE, main="", 
+                              ci=TRUE, thresholds="best", 
+                              ci.type="shape",
+                              print.thres=TRUE,
+                              print.auc=TRUE,
+                              auc.polygon=TRUE, 
+                              max.auc.polygon=T) 
+
+
+grid1 <- expand.grid(.k = seq(2, 20, by = 1))
+control = trainControl(method = "cv")
+
+set.seed(123)
+knn.train <- train(class ~ "selected gene list", 
+                   data = train, 
+                   method = "knn", 
+                   trControl = control, 
+                   tuneGrid = grid1)
+knn.train
+
+knn.test <- knn(train[, c("selected gene list")], 
+                test[, c("selected gene list")], 
+                train[, null], k = 5)
+confusionMatrix(knn.test, test$class, positive = "class style")
+
+set.seed(123)
+kknn.train <- train.kknn(class ~ "selected gene list", 
+                         data = train, kmax = null, distance = null, 
+                         kernel = c("rectangular", "triangular", "epanechnikov"))
+plot(kknn.train)
+
+kknn.pred <- predict(kknn.train, newdata = test)
+
+confusionMatrix(kknn.pred, test$class, positive = "class style")
+
+
+set.seed(123)
+linear.tune <- tune.svm(class ~ "selected gene list", data = train, 
+                        kernel = "linear", 
+                        cost = c(0.001, 0.01, 0.1, 1, 5, 10))
+summary(linear.tune)
+best.linear <- linear.tune$best.model
+tune.test <- predict(best.linear, newdata = test)
+
+confusionMatrix(tune.test, test$class, positive = "class style")
+
+
+set.seed(123)
+poly.tune <- tune.svm(class ~"selected gene list", 
+                      data = train, 
+                      kernel = "polynomial", 
+                      degree = c(3, 4, 5), 
+                      coef0 = c(0.1, 0.5, 1, 2, 3, 4))
+summary(poly.tune)
+best.poly <- poly.tune$best.model
+poly.test <- predict(best.poly, newdata = test)
+
+confusionMatrix(poly.test, test$class, positive = "class style")
+
+
+set.seed(123)
+rbf.tune <- tune.svm(class ~"selected gene list", 
+                     data = train, 
+                     kernel = "radial", 
+                     gamma = c(0.1, 0.5, 1, 2, 3, 4))
+summary(rbf.tune)
+best.rbf <- rbf.tune$best.model
+rbf.test <- predict(best.rbf, newdata = test)
+confusionMatrix(rbf.test, test$class, positive = "class style")
+
+
+set.seed(123)
+sigmoid.tune <- tune.svm(class ~ "selected gene list", 
+                         data = train, 
+                         kernel = "sigmoid", 
+                         gamma = c(0.1, 0.5, 1, 2, 3, 4),
+                         coef0 = c(0.1, 0.5, 1, 2, 3, 4))
+summary(sigmoid.tune)
+best.sigmoid <- sigmoid.tune$best.model
+sigmoid.test <- predict(best.sigmoid, newdata = test)
+
+confusionMatrix(sigmoid.test, test$class, positive = "class style")
+
+
+set.seed(123)
+tree.mydata <- rpart(class ~ "selected gene list", data = "train")
+tree.mydata$cptable
+
+plot(as.party(tree.mydata))
+party.test <- predict(tree.mydata, newdata = "test",type = "class")
+confusionMatrix(party.test, data$class, positive = "class style")
+
+
+
+set.seed(123)
+rf.mydata <- randomForest(class ~"selected gene list", data = "train")
+rf.mydata
+plot(rf.mydata, main="")
+which.min(rf.mydata$err.rate[, 1])
+set.seed(123)
+rf.mydata.2 <- randomForest(class ~ "selected gene list", data = "dataset2.1", ntree = null)
+rf.mydata.test <- predict(rf.mydata.2,  newdata ="dataset2.2",  type = "response")
+table(rf.mydata.test, dataset2.2$class)
+
+confusionMatrix(rf.mydata.test, dataset2.2$class, positive = "class style")
+
+varImpPlot(rf.mydata.2)
+
+
+grid = expand.grid(
+  nrounds = c(75, 100),
+  colsample_bytree = 1,
+  min_child_weight = 1,
+  eta = c(0.01, 0.1, 0.3), #0.3 is default,
+  gamma = c(0.5, 0.25),
+  subsample = 0.5,
+  max_depth = c(2, 3)
+)
+grid
+
+cntrl = trainControl(
+  method = "cv",
+  number = 5,
+  verboseIter = TRUE,
+  returnData = FALSE,
+  returnResamp = "final"                                                        
+)
+
+set.seed(1)
+train.xgb = train(
+  x = train[, c("selected gene list")],
+  y = train[, ],
+  trControl = cntrl,
+  tuneGrid = grid,
+  method = "xgbTree"
+)
+
+train.xgb
+
+param <- list(  objective           = "binary:logistic", 
+                booster             = "gbtree",
+                eval_metric         = "error",
+                eta                 = null, 
+                max_depth           = null, 
+                subsample           = null,
+                colsample_bytree    = null,
+                gamma               = null)
+
+x <- as.matrix(train[, c("selected gene list")])
+y <- ifelse(train$class == "", 1, 0)
+train.mat <- xgb.DMatrix(data = x, label = y)
+
+set.seed(1)
+xgb.fit <- xgb.train(params = param, data = train.mat, nrounds = null)
+xgb.fit
+
+impMatrix <- xgb.importance(feature_names = dimnames(x)[[2]], model = xgb.fit)
+impMatrix #5
+xgb.plot.importance(impMatrix, main = "")
+
+
+pred <- predict(xgb.fit, x)
+optimalCutoff(y, pred)
+testMat <- as.matrix(test[, c("selected gene list")])
+xgb.test <- predict(xgb.fit, testMat)
+
+xgb.roc<-plot.roc(testY, xgb.test, main="", percent=TRUE,
+                  ci=TRUE, thresholds="best", 
+                  ci.type="shape",
+                  print.thres=TRUE,
+                  print.auc=TRUE,
+                  print.auc.adj=c(0.1,8),
+                  auc.polygon=TRUE, 
+                  max.auc.polygon=T) 
+
+
+pca <- principal(train[,c("selected gene list")], rotate="none")
+plot(pca$values, type="", ylab="", xlab="", main= "")
+
+pca.rotate <- principal(train[,c("selected gene list")],  nfactors = 4, rotate = "varimax")
+pca.rotate
+
+pca.scores <- data.frame(pca.rotate$scores)
+head(pca.scores)
+
+
+
+test.scores <- data.frame(predict(pca.rotate, test[,c("selected gene list")]))
+
+with(pca.scores,#test.scores
+     {
+  s3d <- scatterplot3d(RC1, RC2, RC3,pch=null,scale.y=.75,
+                       main="",
+                       xlab="",
+                       ylab="",
+                       zlab="",
+                       type="", 
+                       highlight.3d="")
+  s3d$points(RC1, RC2, RC3, pch = ifelse(train$class=="class style","" ,""), 
+             cex = ifelse(train$class=="class style", "", ""), 
+             col= ifelse(train$class=="class style", "", ""))
+ 
+  s3d.coords <- s3d$xyz.convert(RC1, RC2, RC3)
+  text(s3d.coords$x, s3d.coords$y,
+       labels=train$class, 
+       pos=4, cex=.5)})
+
+nhl.lm <- lm(trainY ~ ., data = pca.scores)
+summary(nhl.lm)
+nhl.lm2 <- lm(trainY ~ "RCs", data = pca.scores)
+summary(nhl.lm2)
+train$pred <- round(nhl.lm2$fitted.values, digits = 2)
+
+pca.scores$class <- trainY
+sqrt(mean(nhl.lm2$residuals^2))
+test.scores <- data.frame(predict(pca.rotate, test[, c("selected gene list")]))
+test.scores$pred <- predict(nhl.lm2, test.scores)
+test.scores$class <- testY
+resid <- test.scores$class - test.scores$pred
+sqrt(mean(resid^2))
+
+pca.roc<-plot.roc(testY, test.scores$pred, percent=TRUE, main="", 
+                  ci=TRUE, thresholds="best",  
+                  print.thres=TRUE,
+                  print.auc=TRUE,
+                  print.auc.adj=c(0.1,8),
+                  auc.polygon=TRUE,
+                  max.auc.polygon=T)
+
+
+gset <- getGEO('', GSEMatrix =TRUE, getGPL=FALSE)
+x <- exprs(gset[[1]])
+x <- x[-grep('^AFFX', rownames(x)),]
+x <- t(scale(t(x)))
+idx <- which(colnames(pData(gset[[1]])) %in%
+               c("phenodata" #survival; rejection;failure
+                 ))
+metadata <- data.frame(pData(gset[[1]])[,idx],row.names = rownames(pData(gset[[1]])))
+
+colnames(metadata) <- c('Graft_Failure', 'Graft_Rejection', 'Main_Analysis',
+                        'Time_from_Biopsy_to_Failure', 'Time_Biopsy_postTx')
+
+metadata$Time_Biopsy_postTx = as.numeric(metadata$Time_Biopsy_postTx)
+metadata$Time_from_Biopsy_to_Failure = as.numeric( metadata$Time_from_Biopsy_to_Failure)
+
+OS<-metadata$Time_Biopsy_postTx + metadata$Time_from_Biopsy_to_Failure
+metadata<-cbind(metadata, OS)
+
+discard <- apply(metadata, 1, function(x) any( is.na(x) ))
+metadata <- metadata[!discard,]
+
+x <- x[,which(colnames(x) %in% rownames(metadata))]
+
+all((colnames(x) == rownames(metadata)) == TRUE)
+
+coxdata <- data.frame(metadata, t(x))
+
+coxdata$Time_from_Biopsy_to_Failure <- as.numeric(coxdata$Time_from_Biopsy_to_Failure)
+coxdata$Time_Biopsy_postTx <- as.numeric(coxdata$Time_Biopsy_postTx)
+coxdata$OS <- as.numeric(coxdata$OS)
+coxdata$Graft_Rejection <- as.numeric(ifelse(coxdata$Graft_Rejection == "rej", 1, 0))
+coxdata$Main_Analysis <- as.numeric(coxdata$Main_Analysis, levels = c(0, 1))
+coxdata$Graft_Failure<-as.numeric(coxdata$Graft_Failure)
+
+
+res <- RegParallel(data = coxdata,
+                   formula = 'Surv(OS,Graft_Failure#Graft_Rejection
+                   ) ~ [*]',
+                   FUN = function(formula, data) 
+                     coxph(formula = formula, data = data,
+                           ties = 'breslow',singular.ok = TRUE),
+                   FUNtype = 'coxph', variables = colnames(coxdata)[7:ncol(coxdata)],
+                   blocksize = 2000, cores = 2, nestedParallel = FALSE, conflevel = 95)
+res <- res[!is.na(res$P),]
+res
+
+
+res <- res[order(res$LogRank, decreasing = FALSE),]
+
+final0.01 <- subset(res, LogRank < 0.01)
+probes0.01 <- gsub('^X', '', final0.01$Variable)
+library(biomaRt)
+mart <- useMart('ENSEMBL_MART_ENSEMBL', host = 'useast.ensembl.org')
+mart <- useDataset("hsapiens_gene_ensembl", mart)
+annotLookup0.01 <- getBM(mart = mart,
+                         attributes = c('affy_hg_u133_plus_2',
+                                        'ensembl_gene_id',
+                                        'gene_biotype',
+                                        'external_gene_name'),
+                         filter = 'affy_hg_u133_plus_2',
+                         values = probes0.01,
+                         uniqueRows = TRUE)
+annotLookup0.01
+
+final.rej.0.5 <- subset(res.rej, LogRank < 0.5)
+probes.rej.0.5 <- gsub('^X', '', final.rej.0.5$Variable)
+library(biomaRt)
+mart <- useMart('ENSEMBL_MART_ENSEMBL', host = 'useast.ensembl.org')
+mart <- useDataset("hsapiens_gene_ensembl", mart)
+annotLookup.rej.0.5 <- getBM(mart = mart,
+                             attributes = c('affy_hg_u133_plus_2',
+                                            'ensembl_gene_id',
+                                            'gene_biotype',
+                                            'external_gene_name'),
+                             filter = 'affy_hg_u133_plus_2',
+                             values = probes.rej.0.5,
+                             uniqueRows = TRUE)
+annotLookup.rej.0.5
+
+
+survplotdata <- coxdata[,c('OS','Graft_Failure',# Graft rejection
+                           "gene list ID"
+)]
+colnames(survplotdata) <- c('OS', 'Graft_Failure',# Graft rejection
+                            "gene names"
+)
+
+highExpr <- 1.0
+lowExpr <- -1.0
+survplotdata$"gene symbol"<- ifelse(survplotdata$"gene symbol" >= highExpr, 
+                             'High',ifelse(survplotdata$TCL1A <= lowExpr, 'Low', 'Mid'))
+
+survplotdata$"gene symbol" <- factor(survplotdata$"gene symbol", levels = c('low',  'High'))
+
+ggsurvplot(survfit(Surv(OS, Graft_Failure #"Graft_rejection" 
+                        ~ "gene symbol"),
+                   data = survplotdata),
+           data = survplotdata,
+           risk.table = F,
+           pval = TRUE,palette = "", 
+           break.time.by = ,
+           ggtheme = theme_minimal(),
+           risk.table.y.text.col = TRUE,
+           risk.table.y.text = FALSE, 
+           xlab= "",
+           ylab= "",
+           legend= 'none') + theme_survminer(
+             font.submain = c(null, "", "")
+           )
+
+surv_object <- Surv(time = survplotdata$OS, event = survplotdata$Graft_Failure)
+surv_object 
+
+fit.coxph <- coxph(surv_object ~ "secleted gene list", data = survplotdata)
+ggforest(fit.coxph, data = survplotdata)
